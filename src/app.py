@@ -154,40 +154,67 @@ total_data[total_data["charges"] > 35000]
 # filtramos los valores superiores al upper limit
 
 total_data_fil = total_data[total_data["charges"] <= 35000]
-total_data_fil = total_data_fil.drop(columns=['smoker', 'region', 'sex', 'children', 'smoker_n', 'region_n', 'sex_n'])
 
-# hemos filtrado los outliers por encima del upper limit y eliminado las columnas con variables categoricas
+# eliminar outliers para bmi
+
+bmi_iqr = bmi_stats["75%"] - bmi_stats["25%"]
+upper_limit = bmi_stats["75%"] + 1.5 * bmi_iqr
+lower_limit = bmi_stats["25%"] - 1.5 * bmi_iqr
+
+print(f"Los límites superior e inferior para la búsqueda de outliers en la variable BMI son {round(upper_limit, 2)} y {round(lower_limit, 2)}")
+
+# pero segun la World Health Organization (WHO)  UN bmi ≥ 40 EQUIVALE A Morbid Obesity/Class III 
+# print(total_data_fil.columns) 
+
+# filtramos los valores de bmi superiores a 40 
+
+total_data_fil2 = total_data_fil[total_data_fil["bmi"] < 40]
+
+total_data_fil2 = total_data_fil.drop(columns=['smoker', 'region', 'sex', 'region_n', 'sex_n'])
+total_data_fil2.shape
 
 from sklearn.model_selection import train_test_split
 
 # Dividimos el conjunto de datos en muestras de train y test
-
-X = total_data_fil.drop("charges", axis = 1)
-y = total_data_fil["charges"]
+X = total_data_fil2.drop("charges", axis = 1)
+y = total_data_fil2["charges"]
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.2, random_state = 42)
-
 X_train.head()
 
-# guardamos datasets
+# escalamiento min-max
+ 
+from sklearn.preprocessing import MinMaxScaler
 
-X_train.to_csv("../data/interim/medical_insu_train.csv", index=False)
-X_test.to_csv("../data/interim/medical_insu_test.csv", index=False)
+col_names = ['age', 'bmi', 'children', 'smoker_n']
+scaler = MinMaxScaler()
+scaler.fit(X_train)
 
-# entrenamiento de modelo
+X_train_scal = scaler.transform(X_train)
+X_train_scal = pd.DataFrame(X_train_scal, index = X_train.index, columns=col_names)
+X_test_scal = scaler.transform(X_test)
+X_test_scal = pd.DataFrame(X_test_scal, index = X_test.index, columns=col_names)
+X_train_scal.head()
+
+# guardar datos en csv
+
+X_train_scal.to_csv("../data/interim/medical_insu_train.csv", index=False)
+X_test_scal.to_csv("../data/interim/medical_insu_test.csv", index=False)
+
+# entrenar modelo 
 
 from sklearn.linear_model import LinearRegression
 
 model = LinearRegression()
-model.fit(X_train, y_train)
+model.fit(X_train_scal, y_train)
 
 print(f"Intercepto (a): {model.intercept_}")
 print(f"Coeficientes (b1, b2): {model.coef_}")
 
-# prediccion
+# prediccion 
 
-y_pred = model.predict(X_test)
-y_pred 
+y_pred = model.predict(X_test_scal)
+y_pred
 
 # metricas
 
@@ -196,4 +223,33 @@ from sklearn.metrics import mean_squared_error, r2_score
 print(f"Error cuadrático medio: {mean_squared_error(y_test, y_pred)}")
 print(f"Coeficiente de determinación: {r2_score(y_test, y_pred)}")
 
-# RESULTADO: coeficiioente muy bajo. el modelo no es satisfactorio
+# # optimizacion con lasso 
+
+from sklearn.linear_model import Lasso
+from sklearn.metrics import mean_squared_error
+
+lasso_model = Lasso(alpha=0.2)  # alpha es el parámetro de regularización
+
+# Entrenar el modelo
+lasso_model.fit(X_train_scal, y_train)
+
+# Hacer predicciones
+y_pred = lasso_model.predict(X_test_scal)
+
+# Evaluar el modelo
+mse = mean_squared_error(y_test, y_pred)
+print("Error cuasdratico medio (Lasso):", mse)
+print("Coeficientes (Lasso):", lasso_model.coef_)
+print("Intercepto (Lasso):", lasso_model.intercept_)
+
+# optimizacion con ridge 
+
+from sklearn.linear_model import Ridge
+
+# Entrenar el modelo de regresión Ridge
+
+ridge_model = Ridge(alpha=1.0)
+ridge_model.fit(X_train_scal, y_train)
+y_pred = ridge_model.predict(X_test_scal)
+r2 = r2_score(y_test, y_pred)
+print("R2 score:", r2)
